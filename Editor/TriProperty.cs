@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,15 +14,19 @@ namespace TriInspector
     public sealed class TriProperty
     {
         private static readonly StringBuilder SharedPropertyPathStringBuilder = new StringBuilder();
-        
+
         private static readonly IReadOnlyList<TriValidationResult> EmptyValidationResults =
             new List<TriValidationResult>();
+
+        // Added a static readonly empty list for children properties to avoid returning null
+        private static readonly IReadOnlyList<TriProperty> EmptyChildrenProperties = new List<TriProperty>();
+        private const int DefaultMaxDrawingDepth = 15;
 
         private readonly TriPropertyDefinition _definition;
         private readonly int _propertyIndex;
         [CanBeNull] private readonly SerializedObject _serializedObject;
         [CanBeNull] private readonly SerializedProperty _serializedProperty;
-        private List<TriProperty> _childrenProperties;
+        private List<TriProperty> _childrenProperties; // This can now be null, but the public getter will handle it
         private List<TriValidationResult> _validationResults;
 
         private GUIContent _displayNameBackingField;
@@ -39,6 +43,9 @@ namespace TriInspector
         public event Action<TriProperty> ValueChanged;
         public event Action<TriProperty> ChildValueChanged;
 
+        // Added Depth property to track the current recursion level
+        public int Depth { get; }
+
         internal TriProperty(
             TriPropertyTree propertyTree,
             TriProperty parent,
@@ -54,6 +61,8 @@ namespace TriInspector
 
             PropertyTree = propertyTree;
             PropertyType = GetPropertyType(this);
+            // Initialize Depth: Root property has depth 0, its children 1, and so on.
+            Depth = (parent?.Depth ?? -1) + 1;
         }
 
         internal TriProperty(
@@ -71,6 +80,8 @@ namespace TriInspector
 
             PropertyTree = propertyTree;
             PropertyType = GetPropertyType(this);
+            // Initialize Depth: Array elements and other children increment depth.
+            Depth = (parent?.Depth ?? -1) + 1;
         }
 
         internal TriPropertyDefinition Definition => _definition;
@@ -311,16 +322,18 @@ namespace TriInspector
         {
             get
             {
-                if (_childrenProperties != null && PropertyType == TriPropertyType.Generic)
-                {
-                    return _childrenProperties;
-                }
-
                 UpdateIfRequired();
 
+                if (_childrenProperties != null && PropertyType == TriPropertyType.Generic)
+                {
+                    // Return the actual children list, or an empty one if _childrenProperties is null.
+                    return _childrenProperties ?? EmptyChildrenProperties;
+                }
+
+                // For other property types (e.g., Primitive, Array), they don't have 'ChildrenProperties'
+                // in the same way Generic/Reference types do. Returning an empty list is the safe default.
                 return PropertyType == TriPropertyType.Generic || PropertyType == TriPropertyType.Reference
-                    ? _childrenProperties
-                    : throw new InvalidOperationException("Cannot read ChildrenProperties for " + PropertyType);
+                    ? _childrenProperties : EmptyChildrenProperties;
             }
         }
 
@@ -329,11 +342,18 @@ namespace TriInspector
         {
             get
             {
-                UpdateIfRequired();
+                // If the property type is Array, we process and return its array elements.
+                // Otherwise, it means this property is not an array, so we return an empty list.
+                if (PropertyType == TriPropertyType.Array)
+                {
+                    // Ensure children (array elements) are updated if needed.
+                    UpdateIfRequired();
+                    // Return the actual array elements list, or an empty one if _childrenProperties is null.
+                    return _childrenProperties ?? EmptyChildrenProperties;
+                }
 
-                return PropertyType == TriPropertyType.Array
-                    ? _childrenProperties
-                    : throw new InvalidOperationException("Cannot read ArrayElementProperties for " + PropertyType);
+                // For non-array property types, return an empty list.
+                return EmptyChildrenProperties;
             }
         }
 
@@ -406,7 +426,9 @@ namespace TriInspector
         {
             if (_isUpdating)
             {
-                throw new InvalidOperationException("Recursive call detected");
+                // This indicates a recursive call during an update, which should be avoided.
+                // It's a safeguard, but the depth limit should prevent most issues.
+                throw new InvalidOperationException("Recursive call detected during property update.");
             }
 
             if (_lastUpdateFrame == PropertyTree.RepaintFrame && !forceUpdate)
@@ -430,6 +452,27 @@ namespace TriInspector
                 _value = newValue;
                 _valueType = newValueType;
                 _isValueMixed = newValueIsMixed;
+
+                // --- Depth Limit Implementation ---
+                // Get the max depth from the attribute on the property definition, or use a default.
+                // while still allowing sufficient inspection.
+                int effectiveMaxDrawDepth = _definition.CustomMaxDrawDepth ?? DefaultMaxDrawingDepth;
+
+                // If the current depth is greater than or equal to the effective max draw depth,
+                // we stop generating children to prevent infinite recursion.
+                if (Depth >= effectiveMaxDrawDepth)
+                {
+                    // Ensure _childrenProperties is initialized as an empty list if it's null,
+                    // then clear it. This ensures ChildrenProperties getter always returns a non-null list.
+                    if (_childrenProperties == null)
+                    {
+                        _childrenProperties = new List<TriProperty>();
+                    }
+                    _childrenProperties.Clear(); // Clear children if depth limit reached
+                    return; // Stop further processing for this branch
+                }
+                // --- End Depth Limit Implementation ---
+
 
                 switch (PropertyType)
                 {
@@ -510,11 +553,20 @@ namespace TriInspector
                     .ToList();
             }
 
-            if (_childrenProperties != null)
+            // Only recurse into children if the property type can have children (Generic, Reference, or Array)
+            // The ChildrenProperties and ArrayElementProperties getters now safely return empty lists for other types.
+            if (PropertyType == TriPropertyType.Generic || PropertyType == TriPropertyType.Reference)
             {
-                foreach (var childrenProperty in _childrenProperties)
+                foreach (var childrenProperty in ChildrenProperties) // Use the public getter
                 {
                     childrenProperty.RunValidation();
+                }
+            }
+            else if (PropertyType == TriPropertyType.Array)
+            {
+                foreach (var arrayElementProperty in ArrayElementProperties) // Use the public getter
+                {
+                    arrayElementProperty.RunValidation();
                 }
             }
         }
@@ -531,11 +583,20 @@ namespace TriInspector
                 }
             }
 
-            if (_childrenProperties != null)
+            // Only recurse into children if the property type can have children (Generic, Reference, or Array)
+            // The ChildrenProperties and ArrayElementProperties getters now safely return empty lists for other types.
+            if (PropertyType == TriPropertyType.Generic || PropertyType == TriPropertyType.Reference)
             {
-                foreach (var childrenProperty in _childrenProperties)
+                foreach (var childrenProperty in ChildrenProperties) // Use the public getter
                 {
                     childrenProperty.EnumerateValidationResults(call);
+                }
+            }
+            else if (PropertyType == TriPropertyType.Array)
+            {
+                foreach (var arrayElementProperty in ArrayElementProperties) // Use the public getter
+                {
+                    arrayElementProperty.EnumerateValidationResults(call);
                 }
             }
         }
@@ -588,7 +649,7 @@ namespace TriInspector
                 BuildPropertyPath(property.Parent, sb);
                 sb.Append('.');
             }
-            
+
             if (property.IsArrayElement)
             {
                 sb.Append("Array.data[").Append(property.IndexInArray).Append(']');
@@ -625,69 +686,69 @@ namespace TriInspector
             switch (property.PropertyType)
             {
                 case TriPropertyType.Array:
-                {
-                    var list = (IList) newValue;
-                    for (var i = 1; i < property.PropertyTree.TargetsCount; i++)
                     {
-                        if (list == null)
+                        var list = (IList) newValue;
+                        for (var i = 1; i < property.PropertyTree.TargetsCount; i++)
                         {
-                            break;
+                            if (list == null)
+                            {
+                                break;
+                            }
+
+                            var otherList = (IList) property.GetValue(i);
+                            if (otherList == null || otherList.Count < list.Count)
+                            {
+                                newValue = list = otherList;
+                            }
                         }
 
-                        var otherList = (IList) property.GetValue(i);
-                        if (otherList == null || otherList.Count < list.Count)
-                        {
-                            newValue = list = otherList;
-                        }
+                        isMixed = true;
+                        return;
                     }
-
-                    isMixed = true;
-                    return;
-                }
                 case TriPropertyType.Reference:
-                {
-                    for (var i = 1; i < property.PropertyTree.TargetsCount; i++)
                     {
-                        var otherValue = property.GetValue(i);
-
-                        if (newValue?.GetType() != otherValue?.GetType())
+                        for (var i = 1; i < property.PropertyTree.TargetsCount; i++)
                         {
-                            isMixed = true;
-                            newValue = null;
-                            return;
-                        }
-                    }
+                            var otherValue = property.GetValue(i);
 
-                    isMixed = false;
-                    return;
-                }
+                            if (newValue?.GetType() != otherValue?.GetType())
+                            {
+                                isMixed = true;
+                                newValue = null;
+                                return;
+                            }
+                        }
+
+                        isMixed = false;
+                        return;
+                    }
                 case TriPropertyType.Generic:
-                {
-                    isMixed = false;
-                    return;
-                }
-                case TriPropertyType.Primitive:
-                {
-                    for (var i = 1; i < property.PropertyTree.TargetsCount; i++)
                     {
-                        var otherValue = property.GetValue(i);
-                        if (!property.Comparer.Equals(otherValue, newValue))
-                        {
-                            isMixed = true;
-                            return;
-                        }
+                        isMixed = false;
+                        return;
                     }
+                case TriPropertyType.Primitive:
+                    {
+                        for (var i = 1; i < property.PropertyTree.TargetsCount; i++)
+                        {
+                            var otherValue = property.GetValue(i);
+                            if (!property.Comparer.Equals(otherValue, newValue))
+                            {
+                                isMixed = true;
+                                return;
+                            }
+                        }
 
-                    isMixed = false;
-                    return;
-                }
+                        isMixed = false;
+                        return;
+                    }
 
                 default:
-                {
-                    Debug.LogError($"Unexpected property type: {property.PropertyType}");
-                    isMixed = true;
-                    return;
-                }
+                    {
+                        Debug.LogError($"Unexpected property type: {property.PropertyType}");
+                        isMixed = true;
+                        return;
+                    }
             }
         }
 

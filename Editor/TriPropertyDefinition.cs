@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,6 +26,9 @@ namespace TriInspector
         private IReadOnlyList<TriValidator> _validatorsBackingField;
         private IReadOnlyList<TriPropertyHideProcessor> _hideProcessorsBackingField;
         private IReadOnlyList<TriPropertyDisableProcessor> _disableProcessorsBackingField;
+
+        // Added property to store the custom max draw depth from attribute
+        [CanBeNull] public int? CustomMaxDrawDepth { get; }
 
         public static TriPropertyDefinition CreateForFieldInfo(int order, FieldInfo fi)
         {
@@ -105,6 +108,17 @@ namespace TriInspector
             else if (Attributes.TryGet(out TooltipAttribute unityTooltipAttribute))
             {
                 CustomTooltip = new ConstantValueResolver<string>(unityTooltipAttribute.tooltip);
+            }
+
+            // Check for MaxDrawDepthAttribute on the member
+            if (Attributes.TryGet(out MaxDrawDepthAttribute maxDrawDepthAttribute))
+            {
+                CustomMaxDrawDepth = maxDrawDepthAttribute.MaxDepth;
+            }
+            // If not found on the member, check on the field type itself
+            else if (fieldType != null && TriReflectionUtilities.GetAttributesCached(fieldType).OfType<MaxDrawDepthAttribute>().FirstOrDefault() is MaxDrawDepthAttribute typeMaxDrawDepthAttribute)
+            {
+                CustomMaxDrawDepth = typeMaxDrawDepthAttribute.MaxDepth;
             }
         }
 
@@ -317,7 +331,7 @@ namespace TriInspector
             return (self, targetIndex, value) =>
             {
                 var parentValue = self.Parent.GetValue(targetIndex);
-                method.Invoke(parentValue, new[] {value,});
+                method.Invoke(parentValue, new[] { value, });
                 return parentValue;
             };
         }
