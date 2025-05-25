@@ -16,7 +16,7 @@ namespace TriInspector.Editors
             base.OnEnable();
 
             _component = target as Component;
-            _go = _component.gameObject;
+            _go = _component?.gameObject;
         }
 
         protected override void OnDisable()
