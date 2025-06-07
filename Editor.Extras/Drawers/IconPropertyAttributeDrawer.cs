@@ -11,6 +11,14 @@ public class IconPropertyAttributeDrawer : PropertyDrawer
     private Texture2D _iconTexture;
     private TriInspector.IconPropertyAttribute _iconAttribute;
 
+    /// <summary>
+    /// Called when the Inspector GUI is drawn for a property with this drawer.
+    /// This method is responsible for drawing the property's label and field,
+    /// and applying the custom icon.
+    /// </summary>
+    /// <param name="position">The rectangle on the screen to draw the property within.</param>
+    /// <param name="property">The SerializedProperty instance for the property being drawn.</param>
+    /// <param name="label">The GUIContent for the property's label.</param>
     public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
     {
         // Get the IconAttribute instance applied to this property.
@@ -20,7 +28,7 @@ public class IconPropertyAttributeDrawer : PropertyDrawer
         // Ensure the icon texture is loaded. Load it once per drawer instance.
         if (_iconTexture == null && _iconAttribute != null)
         {
-            _iconTexture = LoadIconTexture(_iconAttribute.IconPath, _iconAttribute.SourceType);
+            _iconTexture = TriIconClassDrawUtility.LoadIconTexture(_iconAttribute.IconPath, _iconAttribute.SourceType);
         }
 
         // Create a new GUIContent based on the original label.
@@ -77,42 +85,6 @@ public class IconPropertyAttributeDrawer : PropertyDrawer
     {
         // Calculate the height needed for the property, including its children if it's a complex type and expanded.
         return EditorGUI.GetPropertyHeight(property, label, includeChildren: true);
-    }
-
-    /// <summary>
-    /// Loads a <see cref="Texture2D"/> from Unity's Resources or Editor Resources.
-    /// This is a helper method used by the PropertyDrawer.
-    /// </summary>
-    /// <param name="iconPath">The path or name of the icon texture.</param>
-    /// <param name="sourceType">The source type of the icon (<see cref="IconSourceType.Resources"/> or <see cref="IconSourceType.EditorResources"/>).</param>
-    /// <returns>The loaded <see cref="Texture2D"/>, or <c>null</c> if not found.</returns>
-    private static Texture2D LoadIconTexture(string iconPath, IconSourceType sourceType)
-    {
-        if (string.IsNullOrEmpty(iconPath))
-        {
-            return null;
-        }
-
-        Texture2D loadedTexture = null;
-        switch (sourceType)
-        {
-            case IconSourceType.Resources:
-                loadedTexture = Resources.Load<Texture2D>(iconPath);
-                break;
-            case IconSourceType.EditorResources:
-                loadedTexture = EditorGUIUtility.Load(iconPath) as Texture2D;
-                break;
-            default:
-                break;
-        }
-
-        if (loadedTexture == null)
-        {
-            Debug.LogWarning($"[IconAttributeDrawer] Failed to load icon at path '{iconPath}' from source '{sourceType}'. " +
-                             "Ensure the path is correct and the asset is in a 'Resources' folder (for Resources) or " +
-                             "'Editor Default Resources' (for EditorResources asset paths), or is a valid internal Unity icon name.");
-        }
-        return loadedTexture;
     }
 }
 #endif

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using TriInspector.Utilities;
 using UnityEditor;
 using UnityEngine;
@@ -18,6 +18,11 @@ namespace TriInspector.Editors
         public TriEditorCore(Editor editor)
         {
             _editor = editor;
+        }
+
+        public void Enable()
+        {
+            TriIconClassDrawUtility.TryDrawIconForObject(_editor.target);
         }
 
         public void Dispose()
@@ -128,6 +133,43 @@ namespace TriInspector.Editors
             container.Add(root);
 
             return container;
+        }
+
+        /// <summary>
+        /// Helper method to load a Texture2D from Resources or Editor Resources.
+        /// Duplicated here to make this class self-contained for icon loading,
+        /// but in a real project, this might be a shared utility.
+        /// </summary>
+        /// <param name="iconPath">The path or name of the icon texture.</param>
+        /// <param name="sourceType">The source type of the icon.</param>
+        /// <returns>The loaded Texture2D, or null if not found.</returns>
+        private static Texture2D LoadIconTexture(string iconPath, IconSourceType sourceType)
+        {
+            if (string.IsNullOrEmpty(iconPath))
+            {
+                return null;
+            }
+
+            Texture2D loadedTexture = null;
+            switch (sourceType)
+            {
+                case IconSourceType.Resources:
+                    loadedTexture = Resources.Load<Texture2D>(iconPath);
+                    break;
+                case IconSourceType.EditorResources:
+                    loadedTexture = EditorGUIUtility.Load(iconPath) as Texture2D;
+                    break;
+                default:
+                    break;
+            }
+
+            if (loadedTexture == null)
+            {
+                Debug.LogWarning($"[TriEditor] Failed to load icon at path '{iconPath}' from source '{sourceType}'. " +
+                                 "Ensure the path is correct and the asset is in a 'Resources' folder (for Resources) or " +
+                                 "'Editor Default Resources' (for EditorResources asset paths), or is a valid internal Unity icon name.");
+            }
+            return loadedTexture;
         }
 
         private static class Styles

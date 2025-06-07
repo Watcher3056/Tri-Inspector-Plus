@@ -6,7 +6,7 @@ namespace TriInspector
     /// <summary>
     /// Attribute to assign a custom icon to a property's label in the TriInspector.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
     public class IconClassAttribute : Attribute
     {
         public string IconPath { get; private set; }
